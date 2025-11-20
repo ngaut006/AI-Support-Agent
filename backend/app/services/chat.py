@@ -1,6 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.services.agent import agent_service
 from app.services.vector_store import vector_store
+from app.services.chat_storage import chat_storage
 from app.core.tools import AVAILABLE_TOOLS
 from openai import OpenAI
 import json
@@ -11,10 +12,17 @@ class ChatService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    async def chat(self, agent_id: str, message: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
+    async def chat(self, agent_id: str, message: str, history: List[Dict[str, str]], session_id: Optional[str] = None) -> Dict[str, Any]:
         agent = agent_service.get_agent(agent_id)
         if not agent:
             raise ValueError("Agent not found")
+
+        # 0. Manage Session
+        if not session_id:
+            session_id = chat_storage.create_session(agent_id, title=message[:50])
+        
+        # Save user message
+        chat_storage.add_message(session_id, "user", message)
 
         # 1. Retrieve context
         try:
@@ -42,7 +50,8 @@ class ChatService:
             return {
                 "response": "I'm sorry, but I can't process your request right now because the OpenAI API key is missing. Please configure it in the backend .env file.",
                 "citations": [],
-                "tool_calls": []
+                "tool_calls": [],
+                "session_id": session_id
             }
 
         try:
@@ -58,9 +67,13 @@ class ChatService:
             return {
                 "response": f"I encountered an error communicating with the AI provider: {str(e)}",
                 "citations": [],
-                "tool_calls": []
+                "tool_calls": [],
+                "session_id": session_id
             }
         
+        # Save assistant response
+        chat_storage.add_message(session_id, "assistant", answer)
+
         # Log for fine-tuning
         try:
             log_entry = {
@@ -83,7 +96,8 @@ class ChatService:
         return {
             "response": answer,
             "citations": documents,
-            "tool_calls": []
+            "tool_calls": [],
+            "session_id": session_id
         }
 
 chat_service = ChatService()

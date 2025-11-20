@@ -24,3 +24,8 @@ build/
 .vscode/
 .idea/
 *.swp
+
+# Database
+*.db
+*.sqlite3
+backend/data/chat.db

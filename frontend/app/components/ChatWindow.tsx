@@ -13,12 +13,14 @@ interface Message {
 
 interface ChatWindowProps {
     agentId: string;
+    initialSessionId?: string;
 }
 
-export default function ChatWindow({ agentId }: ChatWindowProps) {
+export default function ChatWindow({ agentId, initialSessionId }: ChatWindowProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -28,6 +30,25 @@ export default function ChatWindow({ agentId }: ChatWindowProps) {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Fetch history if sessionId is provided
+    useEffect(() => {
+        const fetchHistory = async () => {
+            if (!sessionId) return;
+            try {
+                const res = await api.get(`/chat/history/${sessionId}`);
+                // Transform backend history to frontend messages
+                const history = res.data.map((msg: any) => ({
+                    role: msg.role,
+                    content: msg.content
+                }));
+                setMessages(history);
+            } catch (err) {
+                console.error('Failed to fetch chat history', err);
+            }
+        };
+        fetchHistory();
+    }, [sessionId]);
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -45,13 +66,19 @@ export default function ChatWindow({ agentId }: ChatWindowProps) {
             const res = await api.post('/chat', {
                 agent_id: agentId,
                 message: userMessage.content,
-                history: history
+                history: history,
+                session_id: sessionId
             });
+
+            // Update session ID if it's a new session
+            if (res.data.session_id && !sessionId) {
+                setSessionId(res.data.session_id);
+            }
 
             const assistantMessage: Message = {
                 role: 'assistant',
                 content: res.data.response,
-                citations: res.data.citations // Assuming backend returns list of filenames or snippets
+                citations: res.data.citations
             };
 
             setMessages(prev => [...prev, assistantMessage]);
